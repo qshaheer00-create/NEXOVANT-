@@ -1,44 +1,72 @@
-# Nexovant Exporters — integrated B2B + B2C starter
+# Nexovant Exporters — Modular Phase 1
 
-This bundle combines the existing React/Vite frontend with Vercel serverless API endpoints and a Supabase/PostgreSQL schema. It is a deployable starter, not a fully audited production commerce system.
+This project preserves the existing public React website and adds separate account-related page modules. It is a development handoff, not a production-ready commerce system.
 
-## Included
-- B2B pages: bulk catalog, product detail, quote wizard, logistics, quality, contact and specifications.
-- B2C pages: retail shop, product detail, local cart, checkout and local order-history page.
-- API endpoints: `GET /api/health`, `GET /api/products`, `POST /api/orders`, `POST /api/quotes`, `POST /api/contact`.
-- Supabase schema and sample product seed data.
-- Checkout and quote forms submit to the API instead of pretending that a browser-only save is a server order.
+## What's included
 
-## Deploy steps
-1. Back up your current GitHub repo. Upload the contents of this project folder to the repository root (same level as `index.html`, `package.json`, `src/`). Do not upload the outer ZIP folder as a nested folder.
-2. In Supabase, create a project and open SQL Editor. Run `supabase/schema.sql`.
-3. In Supabase Project Settings > API, copy the project URL and service-role/secret key. Never put this key in frontend code or in a `VITE_` variable.
-4. In Vercel > Project > Settings > Environment Variables, add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for Production (and Preview if needed). Redeploy after saving them.
-5. In Vercel > Project Settings, use Framework Preset Vite, Build Command `npm run build`, Output Directory `dist`, Install Command `npm install`.
-6. Test `https://YOUR_DOMAIN/api/health`, then `https://YOUR_DOMAIN/api/products`. Submit a test checkout and quote request. Delete test orders after verification.
+- Existing public pages and styles preserved in `src/main.jsx` and `src/styles.css`.
+- Separate preview pages in `src/pages/`: login, registration, retail dashboard, B2B dashboard, admin dashboard, and order tracking.
+- Shared account layout in `src/components/AccountShell.jsx`.
+- Account-only styles in `src/styles/account.css`.
+- Existing Vercel API routes in `api/` and existing Supabase schema in `supabase/schema.sql` preserved.
+- New account preview routes registered in the React router.
 
-## Critical setup before accepting real orders
-- All retail prices in the UI and SQL seed are sample PKR estimates. Approve prices and update both `src/main.jsx` retail prices and `products.price_per_kg` in Supabase; the backend uses database prices as authoritative. If they differ, cart estimate may differ from saved server total.
-- Stock values seed to 0 but this starter does not block orders by stock. Stock reservation and inventory management need to be implemented before real fulfilment.
-- Checkout creates a **manual order request**, not a paid order. No payment gateway is configured. Add a supported provider after confirming your business country, merchant account, currency, shipping/tax rules and target markets. Never collect card details directly in this site.
-- There is no admin dashboard or customer authentication yet. Manage order and quote records in Supabase dashboard only; do not expose service-role credentials.
-- Email notifications are not configured. Add a verified transactional email provider and send notifications from server-side functions.
-- The contact page currently retains its original demo behavior; `/api/contact` is provided but the visible contact form still needs wiring before production.
-- Quote API stores the RFQ but does not send email.
-- Add spam/rate limiting, privacy policy, terms, returns/refund, shipping and cookie notices as appropriate. Review privacy/data obligations in your selling markets.
-- Sample specifications and product imagery must be reviewed. Do not make unverified certification or food safety claims.
+## Routes added
 
-## Security notes
-- Never commit `.env` files or service-role keys. `.env.example` contains placeholders only.
-- API uses server-side environment variables and validates inputs and prices.
-- The schema enables Row Level Security and creates no public policies. Server functions use the service-role key.
-- Test the endpoints after deploying; a green deployment alone does not prove the database is configured.
+- `/login`
+- `/register`
+- `/account/retail`
+- `/account/b2b`
+- `/admin`
+- `/order-tracking`
 
-## Local development
-Requires Node.js LTS.
+## Important limitations
+
+The new account pages are UI previews only. They do not yet authenticate users, fetch customer-specific orders, or provide working admin controls. Do not treat the admin preview as an access-control mechanism. The existing retail checkout/order-history implementation uses browser local storage, so those orders are not securely persisted for an account across devices. Online payments are not implemented. Keep COD and online gateway integration disabled until the server-side order flow and payment verification are completed.
+
+The large existing public-page module `src/main.jsx` is retained to reduce the risk of breaking working pages in this first handoff. The next refactor should extract existing page components into separate files in small, build-tested steps, then move data and API operations into dedicated service modules.
+
+## Setup
+
+Requirements: Node.js 20 or a current supported LTS release.
+
 ```bash
 npm install
 npm run dev
+```
+
+Create a production build with:
+
+```bash
 npm run build
 ```
-Vite local development does not automatically run Vercel API functions. Use `vercel dev` for local API testing after installing the Vercel CLI, with environment variables configured.
+
+## Deployment notes
+
+- Keep production secrets in Vercel environment variables; never commit service-role keys or API secrets.
+- Preserve the existing environment variable names unless the backend code is deliberately migrated.
+- Apply and review Supabase schema/policy changes before deploying any authenticated order workflow.
+- Test the public pages, forms, cart, checkout, and every new route before production deployment.
+
+## Verification status
+
+A build could not be verified in the preparation environment because dependencies were unavailable (`vite` was not installed and dependency installation did not complete). Run `npm install` and `npm run build` locally before deploying. This archive has not been deployed and does not modify the remote GitHub or Vercel project.
+
+## Phase 2: Supabase Authentication starter
+
+This phase replaces the login/register alert previews with Supabase Auth calls and adds a profile trigger/policies SQL file. It is not yet a complete customer portal: order persistence, role-protected admin APIs, quotations and tracking still need implementation.
+
+### Configure locally
+
+1. In Supabase, open Project Settings > API and copy the Project URL and anon/public key.
+2. Copy `.env.example` to `.env.local` in the project root.
+3. Replace the example values with your own `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+4. In Supabase Dashboard > Authentication > URL Configuration, add your local URL (for example `http://localhost:5173`) to the allowed redirect URLs.
+5. Open Supabase SQL Editor and run `supabase/auth-profiles.sql`.
+6. Run `npm.cmd install` in Windows PowerShell, then `npm.cmd run dev`.
+
+Only the anon/public key belongs in `.env.local`; never use the Supabase `service_role` key in frontend code. Keep all server secrets in Vercel environment variables. New users may choose retail or B2B; registration cannot grant admin access. Assign admin access manually through a trusted database/admin process after the authorization design is implemented.
+
+### Build and limitations
+
+Run `npm.cmd run build` before deployment. Dependency installation could not be completed in the preparation environment, so this archive's production build has not been verified. Login uses Supabase email/password authentication; registration may require email confirmation according to your Supabase Auth settings. Dashboards remain previews and do not yet fetch order data.
