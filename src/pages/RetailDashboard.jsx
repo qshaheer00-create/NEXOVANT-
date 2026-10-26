@@ -156,7 +156,7 @@ export default function RetailDashboard() {
                 <p><strong>Order:</strong> {order.id}</p>
                 <p><strong>Date:</strong> {order.created_at ? new Date(order.created_at).toLocaleString() : '—'}</p>
                 <p><strong>Status:</strong> {order.status || 'Pending'}</p>
-                <p><strong>Total:</strong> {order.currency || 'PKR'} {Number(order.total || 0).toLocaleString()}</p>
+                <p><strong>Total:</strong> {new Intl.NumberFormat('en-US', { style: 'currency', currency: order.currency || 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(order.total || 0))}</p>
                 {Array.isArray(order.items) && order.items.length > 0 && (
                   <ul>{order.items.map((item, index) => (
                     <li key={`${order.id}-${index}`}>{item.name || item.product_name || 'Item'} — Qty: {item.quantity ?? '—'}</li>
