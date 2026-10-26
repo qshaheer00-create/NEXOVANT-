@@ -17,11 +17,11 @@ export default async function handler(req, res) {
   // GET: return only the signed-in customer's orders.
   if (req.method === 'GET') {
     const authHeader = req.headers?.authorization || req.headers?.Authorization;
-    const match = /^Bearer\\s+(.+)$/i.exec(authHeader || '');
+    const match = /^Bearer\s+(.+)$/i.exec(authHeader || '');
     if (!match) return res.status(401).json({ error: 'Please sign in to view your orders.' });
 
     try {
-      const authResponse = await fetch(`${URL.replace(/\\/$/, '')}/auth/v1/user`, {
+      const authResponse = await fetch(`${URL.replace(/\/$/, '')}/auth/v1/user`, {
         headers: { apikey: KEY, Authorization: `Bearer ${match[1]}` }
       });
       const authUser = await authResponse.json().catch(() => null);
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
       }
 
       const ordersResponse = await fetch(
-        `${URL.replace(/\\/$/, '')}/rest/v1/orders?select=id,created_at,items,total,currency,status,notes&user_id=eq.${encodeURIComponent(authUser.id)}&order=created_at.desc`,
+        `${URL.replace(/\/$/, '')}/rest/v1/orders?select=id,created_at,items,total,currency,status,notes&user_id=eq.${encodeURIComponent(authUser.id)}&order=created_at.desc`,
         { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } }
       );
       const orders = await ordersResponse.json().catch(() => null);
@@ -59,34 +59,21 @@ export default async function handler(req, res) {
   try {
     const b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
 
-    // If the checkout sends a Supabase access token, verify it with Supabase.
-    // Guest checkout remains compatible; such orders have user_id = null.
-    let userId = null;
+    // Every retail order must belong to an authenticated customer account.
     const authHeader = req.headers?.authorization || req.headers?.Authorization;
-    if (authHeader) {
-      const match = /^Bearer\s+(.+)$/i.exec(authHeader);
-      if (!match) {
-        return res.status(401).json({ error: 'Invalid authorization header.' });
-      }
-
-      const authResponse = await fetch(`${URL.replace(/\/$/, '')}/auth/v1/user`, {
-        headers: {
-          apikey: KEY,
-          Authorization: `Bearer ${match[1]}`
-        }
-      });
-      const authUser = await authResponse.json().catch(() => null);
-
-      if (!authResponse.ok || !authUser?.id) {
-        return res.status(401).json({ error: 'Your session is invalid or expired. Please sign in again.' });
-      }
-
-      userId = authUser.id;
-      // Prevent an authenticated user from placing an order under another email.
-      const suppliedEmail = clean(b.email, 254).toLowerCase();
-      if (authUser.email && suppliedEmail && authUser.email.toLowerCase() !== suppliedEmail) {
-        return res.status(403).json({ error: 'The checkout email must match your signed-in account.' });
-      }
+    const match = /^Bearer\s+(.+)$/i.exec(authHeader || '');
+    if (!match) return res.status(401).json({ error: 'Please sign in to your customer account before placing an order.' });
+    const authResponse = await fetch(`${URL.replace(/\/$/, '')}/auth/v1/user`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${match[1]}` }
+    });
+    const authUser = await authResponse.json().catch(() => null);
+    if (!authResponse.ok || !authUser?.id) {
+      return res.status(401).json({ error: 'Your session is invalid or expired. Please sign in again.' });
+    }
+    const userId = authUser.id;
+    const suppliedEmail = clean(b.email, 254).toLowerCase();
+    if (!authUser.email || suppliedEmail !== authUser.email.toLowerCase()) {
+      return res.status(403).json({ error: 'The checkout email must match your signed-in account.' });
     }
 
     const customer_name = clean(b.customer_name, 120);
@@ -172,7 +159,7 @@ export default async function handler(req, res) {
     const total = money(lines.reduce((sum, x) => sum + x.line_total, 0));
     const order = {
       customer_name, email, phone, country, address, city, postal_code, notes,
-      items: lines, total, currency: 'PKR', status: 'pending',
+      items: lines, total, currency: 'USD', status: 'pending',
       user_id: userId
     };
 
