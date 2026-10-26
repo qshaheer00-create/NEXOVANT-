@@ -1,5 +1,5 @@
 -- Nexovant Exporters database schema. Run in Supabase Dashboard > SQL Editor.
--- IMPORTANT: Prices below are sample PKR prices for development only. Replace before accepting real orders.
+-- Initial seed values are legacy examples. Run usd-retail-prices.sql after applying this schema to set indicative US retail prices in USD.
 create extension if not exists pgcrypto;
 
 create table if not exists public.products (
@@ -28,7 +28,7 @@ create table if not exists public.orders (
   notes text not null default '',
   items jsonb not null,
   total numeric(12,2) not null check (total >= 0),
-  currency text not null default 'PKR',
+  currency text not null default 'USD',
   status text not null default 'pending' check (status in ('pending','confirmed','processing','shipped','completed','cancelled')),
   created_at timestamptz not null default now()
 );
