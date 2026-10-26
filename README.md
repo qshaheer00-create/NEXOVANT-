@@ -1,46 +1,44 @@
-# Nexovant Exporters — B2B + B2C website
+# Nexovant Exporters — integrated B2B + B2C starter
 
-Responsive React + Vite starter for an agricultural commodity exporter with separate bulk-export and retail-shopping journeys.
+This bundle combines the existing React/Vite frontend with Vercel serverless API endpoints and a Supabase/PostgreSQL schema. It is a deployable starter, not a fully audited production commerce system.
 
-## Pages
-- `/` — corporate homepage
-- `/products` and `/products/:slug` — B2B catalog and technical product pages
-- `/quote` — bulk RFQ wizard
-- `/shop` and `/shop/:slug` — retail shop with 1 kg, 2 kg, 3 kg, 5 kg and 10 kg pack sizes
-- `/cart` — editable retail cart
-- `/checkout` — customer/delivery form and manual order-request confirmation
-- `/my-orders` — local demo order history
-- `/about`, `/logistics`, `/quality`, `/contact`, `/freight-estimator`, `/specifications`
+## Included
+- B2B pages: bulk catalog, product detail, quote wizard, logistics, quality, contact and specifications.
+- B2C pages: retail shop, product detail, local cart, checkout and local order-history page.
+- API endpoints: `GET /api/health`, `GET /api/products`, `POST /api/orders`, `POST /api/quotes`, `POST /api/contact`.
+- Supabase schema and sample product seed data.
+- Checkout and quote forms submit to the API instead of pretending that a browser-only save is a server order.
 
-## Run locally
-Requires a current Node.js LTS release.
+## Deploy steps
+1. Back up your current GitHub repo. Upload the contents of this project folder to the repository root (same level as `index.html`, `package.json`, `src/`). Do not upload the outer ZIP folder as a nested folder.
+2. In Supabase, create a project and open SQL Editor. Run `supabase/schema.sql`.
+3. In Supabase Project Settings > API, copy the project URL and service-role/secret key. Never put this key in frontend code or in a `VITE_` variable.
+4. In Vercel > Project > Settings > Environment Variables, add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for Production (and Preview if needed). Redeploy after saving them.
+5. In Vercel > Project Settings, use Framework Preset Vite, Build Command `npm run build`, Output Directory `dist`, Install Command `npm install`.
+6. Test `https://YOUR_DOMAIN/api/health`, then `https://YOUR_DOMAIN/api/products`. Submit a test checkout and quote request. Delete test orders after verification.
 
+## Critical setup before accepting real orders
+- All retail prices in the UI and SQL seed are sample PKR estimates. Approve prices and update both `src/main.jsx` retail prices and `products.price_per_kg` in Supabase; the backend uses database prices as authoritative. If they differ, cart estimate may differ from saved server total.
+- Stock values seed to 0 but this starter does not block orders by stock. Stock reservation and inventory management need to be implemented before real fulfilment.
+- Checkout creates a **manual order request**, not a paid order. No payment gateway is configured. Add a supported provider after confirming your business country, merchant account, currency, shipping/tax rules and target markets. Never collect card details directly in this site.
+- There is no admin dashboard or customer authentication yet. Manage order and quote records in Supabase dashboard only; do not expose service-role credentials.
+- Email notifications are not configured. Add a verified transactional email provider and send notifications from server-side functions.
+- The contact page currently retains its original demo behavior; `/api/contact` is provided but the visible contact form still needs wiring before production.
+- Quote API stores the RFQ but does not send email.
+- Add spam/rate limiting, privacy policy, terms, returns/refund, shipping and cookie notices as appropriate. Review privacy/data obligations in your selling markets.
+- Sample specifications and product imagery must be reviewed. Do not make unverified certification or food safety claims.
+
+## Security notes
+- Never commit `.env` files or service-role keys. `.env.example` contains placeholders only.
+- API uses server-side environment variables and validates inputs and prices.
+- The schema enables Row Level Security and creates no public policies. Server functions use the service-role key.
+- Test the endpoints after deploying; a green deployment alone does not prove the database is configured.
+
+## Local development
+Requires Node.js LTS.
 ```bash
 npm install
 npm run dev
-```
-
-Production build:
-
-```bash
 npm run build
-npm run preview
 ```
-
-## Deploy on Vercel
-- Framework: Vite
-- Build command: `npm run build`
-- Output directory: `dist`
-- Install command: `npm install`
-
-Commit changes to GitHub; Vercel should deploy the connected branch automatically. For React Router deep links, configure Vercel SPA rewrites if direct page refreshes return 404. Add `vercel.json` with `{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }` if needed.
-
-## Important production limitations
-- Retail prices are illustrative PKR placeholders. Replace them with approved prices before launch.
-- Cart and demo order history use browser localStorage. Orders are not sent to a server, email, CRM, or database and are only visible in the same browser/device.
-- No payment provider is configured; checkout creates a local **manual confirmation request**, not a payment or a fulfilled order.
-- A production launch needs a secure backend/database, server-side price and stock validation, email notifications, payment integration suitable for your markets, customer authentication, and role-protected order administration. Do not store secret keys in frontend code.
-- Sample product specifications and imagery should be reviewed/replaced with approved business data. Certification claims must only be shown with valid evidence.
-
-## Environment variables
-The frontend-only demo does not require environment variables. Add server-side environment variables only when a backend/payment/email service has actually been integrated.
+Vite local development does not automatically run Vercel API functions. Use `vercel dev` for local API testing after installing the Vercel CLI, with environment variables configured.
