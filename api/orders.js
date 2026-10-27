@@ -121,7 +121,7 @@ export default async function handler(req, res) {
     const ids = [...new Set([...map.values()].map(x => x.id))];
     const filter = ids.map(id => `id.eq.${id}`).join(',');
     const productsResponse = await fetch(
-      `${URL.replace(/\/$/, '')}/rest/v1/products?select=id,name,price_per_kg,is_active&is_active=eq.true&or=(${encodeURIComponent(filter)})`,
+      `${URL.replace(/\/$/, '')}/rest/v1/products?select=id,name,price_per_kg,sale_price_per_kg,is_active&is_active=eq.true&or=(${encodeURIComponent(filter)})`,
       { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } }
     );
 
@@ -139,7 +139,9 @@ export default async function handler(req, res) {
     const byId = new Map(products.map(p => [String(p.id), p]));
     const lines = [...map.values()].map(it => {
       const p = byId.get(it.id);
-      const price = Number(p.price_per_kg);
+      const regularPrice = Number(p.price_per_kg);
+      const salePrice = p.sale_price_per_kg == null ? null : Number(p.sale_price_per_kg);
+      const price = salePrice !== null && Number.isFinite(salePrice) && salePrice >= 0 && salePrice < regularPrice ? salePrice : regularPrice;
       return {
         product_id: it.id,
         name: p.name,
