@@ -9,6 +9,7 @@ create table if not exists public.products (
   description text not null default '',
   category text not null default 'General',
   price_per_kg numeric(12,2) not null check (price_per_kg >= 0),
+  sale_price_per_kg numeric(12,2) null check (sale_price_per_kg is null or sale_price_per_kg >= 0),
   image_url text,
   stock_quantity integer not null default 0 check (stock_quantity >= 0),
   is_active boolean not null default true,
