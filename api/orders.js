@@ -1,5 +1,6 @@
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 
 const clean = (v, n = 300) =>
   typeof v === 'string' ? v.trim().slice(0, n) : '';
@@ -14,7 +15,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // GET: return only the signed-in customer's orders.
+  // GET: return customer-specific orders, or all orders to the verified admin.
   if (req.method === 'GET') {
     const authHeader = req.headers?.authorization || req.headers?.Authorization;
     const match = /^Bearer\s+(.+)$/i.exec(authHeader || '');
@@ -29,6 +30,25 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: 'Your session is invalid or expired. Please sign in again.' });
       }
 
+      // Admin access is granted only when the verified Supabase email matches ADMIN_EMAIL.
+      if (req.query?.admin === '1') {
+        if (!ADMIN_EMAIL || !authUser.email || authUser.email.trim().toLowerCase() !== ADMIN_EMAIL) {
+          return res.status(403).json({ error: 'You are not authorized to view all orders.' });
+        }
+
+        const adminOrdersResponse = await fetch(
+          `${URL.replace(/\/$/, '')}/rest/v1/orders?select=id,created_at,customer_name,email,phone,country,address,city,postal_code,notes,items,total,currency,status&order=created_at.desc`,
+          { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } }
+        );
+        const adminOrders = await adminOrdersResponse.json().catch(() => null);
+        if (!adminOrdersResponse.ok || !Array.isArray(adminOrders)) {
+          console.error('Admin order lookup failed', adminOrdersResponse.status);
+          return res.status(502).json({ error: 'Could not load orders right now.' });
+        }
+        return res.status(200).json({ orders: adminOrders });
+      }
+
+      // Customer history: only orders belonging to the signed-in customer.
       const ordersResponse = await fetch(
         `${URL.replace(/\/$/, '')}/rest/v1/orders?select=id,created_at,items,total,currency,status,notes&user_id=eq.${encodeURIComponent(authUser.id)}&order=created_at.desc`,
         { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } }
@@ -48,12 +68,6 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  if (!URL || !KEY) {
-    return res.status(503).json({
-      error: 'Order service is not configured yet. Please try again later.'
-    });
   }
 
   try {
@@ -85,13 +99,9 @@ export default async function handler(req, res) {
     const postal_code = clean(b.postal_code, 40);
     const notes = clean(b.notes, 1000);
 
-    if (!customer_name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-        !phone || !country || !address || !city) {
-      return res.status(400).json({
-        error: 'Please provide valid contact and delivery details.'
-      });
+    if (!customer_name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !phone || !country || !address || !city) {
+      return res.status(400).json({ error: 'Please provide valid contact and delivery details.' });
     }
-
     if (!Array.isArray(b.items) || b.items.length < 1 || b.items.length > 30) {
       return res.status(400).json({ error: 'Order must contain 1–30 product lines.' });
     }
@@ -101,20 +111,13 @@ export default async function handler(req, res) {
       const id = clean(it.product_id, 80);
       const quantity = Number(it.quantity);
       const kg = Number(it.weight_kg);
-
-      if (!id || !Number.isSafeInteger(quantity) || quantity < 1 ||
-          quantity > 99 || ![1, 2, 3, 5, 10].includes(kg)) {
-        return res.status(400).json({
-          error: 'Invalid product, pack size or quantity.'
-        });
+      if (!id || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99 || ![1, 2, 3, 5, 10].includes(kg)) {
+        return res.status(400).json({ error: 'Invalid product, pack size or quantity.' });
       }
-
       const k = `${id}|${kg}`;
       const prev = map.get(k) || { id, kg, quantity: 0 };
       prev.quantity += quantity;
-      if (prev.quantity > 99) {
-        return res.status(400).json({ error: 'Maximum 99 packs per line.' });
-      }
+      if (prev.quantity > 99) return res.status(400).json({ error: 'Maximum 99 packs per line.' });
       map.set(k, prev);
     }
 
@@ -124,16 +127,13 @@ export default async function handler(req, res) {
       `${URL.replace(/\/$/, '')}/rest/v1/products?select=id,name,price_per_kg,sale_price_per_kg,is_active&is_active=eq.true&or=(${encodeURIComponent(filter)})`,
       { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } }
     );
-
     const products = await productsResponse.json().catch(() => null);
     if (!productsResponse.ok || !Array.isArray(products)) {
       console.error('Order product lookup failed', productsResponse.status);
       return res.status(502).json({ error: 'Could not verify product prices.' });
     }
     if (products.length !== ids.length) {
-      return res.status(400).json({
-        error: 'One or more products are unavailable. Please refresh and try again.'
-      });
+      return res.status(400).json({ error: 'One or more products are unavailable. Please refresh and try again.' });
     }
 
     const byId = new Map(products.map(p => [String(p.id), p]));
@@ -151,20 +151,15 @@ export default async function handler(req, res) {
         line_total: money(price * it.kg * it.quantity)
       };
     });
-
     if (lines.some(x => !Number.isFinite(x.unit_price_per_kg) || x.unit_price_per_kg < 0)) {
-      return res.status(500).json({
-        error: 'A product has an invalid price. Contact the site owner.'
-      });
+      return res.status(500).json({ error: 'A product has an invalid price. Contact the site owner.' });
     }
 
     const total = money(lines.reduce((sum, x) => sum + x.line_total, 0));
     const order = {
       customer_name, email, phone, country, address, city, postal_code, notes,
-      items: lines, total, currency: 'USD', status: 'pending',
-      user_id: userId
+      items: lines, total, currency: 'USD', status: 'pending', user_id: userId
     };
-
     const insertResponse = await fetch(`${URL.replace(/\/$/, '')}/rest/v1/orders`, {
       method: 'POST',
       headers: {
@@ -175,25 +170,14 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify([order])
     });
-
     const created = await insertResponse.json().catch(() => null);
     if (!insertResponse.ok || !Array.isArray(created) || !created[0]?.id) {
       console.error('Order insert failed', insertResponse.status, created);
-      return res.status(502).json({
-        error: 'Your order request could not be saved. Please try again.'
-      });
+      return res.status(502).json({ error: 'Your order request could not be saved. Please try again.' });
     }
-
-    return res.status(201).json({
-      message: 'Order request saved.',
-      order_id: created[0].id,
-      total: created[0].total,
-      status: created[0].status
-    });
+    return res.status(201).json({ message: 'Order request saved.', order_id: created[0].id, total: created[0].total, status: created[0].status });
   } catch (e) {
-    if (e instanceof SyntaxError) {
-      return res.status(400).json({ error: 'Request body must be valid JSON.' });
-    }
+    if (e instanceof SyntaxError) return res.status(400).json({ error: 'Request body must be valid JSON.' });
     console.error('Orders API error', e);
     return res.status(500).json({ error: 'Unexpected server error.' });
   }
