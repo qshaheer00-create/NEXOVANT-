@@ -90,43 +90,65 @@ function RetailProduct(){const liveProducts=useLiveRetailProducts();const {slug}
 function Cart(){const [items,setItems]=useState(readCart);useEffect(()=>{let active=true;fetch('/api/products',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('prices unavailable');return r.json()}).then(data=>{if(!active)return;const map=new Map((data.products||[]).map(p=>[String(p.id),p]));setItems(old=>{const next=old.map(i=>{const p=map.get(String(i.productId));if(!p)return i;const regular=Number(p.price_per_kg??i.pricePerKg),sale=p.sale_price_per_kg==null?null:Number(p.sale_price_per_kg);return {...i,pricePerKg:sale!==null&&sale<regular?sale:regular}});writeCart(next);return next})}).catch(()=>{});return()=>{active=false}},[]);const update=(key,qty)=>{const next=items.map(i=>i.key===key?{...i,qty}:i).filter(i=>i.qty>0);setItems(next);writeCart(next)};const subtotal=items.reduce((s,i)=>s+i.pricePerKg*i.kg*i.qty,0);return <Layout><RetailNav/><PageHero eyebrow="YOUR SHOPPING CART" title="Review your" accent="retail order." sub="Check pack sizes and quantities before continuing to checkout."/><section className="section"><div className="container cart-layout">{!items.length?<div className="empty-state"><Package size={34}/><h3>Your cart is empty</h3><p>Browse our retail range and add a pack to get started.</p><Link className="btn btn-dark" to="/shop">Explore retail shop <ArrowRight size={16}/></Link></div>:<><div className="cart-items">{items.map(i=><article className="cart-item" key={i.key}><img src={i.img} alt={i.name}/><div className="cart-item-info"><h3>{i.name}</h3><p>{i.kg} kg pack · {money(i.pricePerKg)} / kg</p><strong>{money(i.pricePerKg*i.kg*i.qty)}</strong></div><div className="cart-qty"><button onClick={()=>update(i.key,i.qty-1)} aria-label="Remove one pack">−</button><span>{i.qty}</span><button onClick={()=>update(i.key,i.qty+1)} aria-label="Add one pack">+</button><button className="remove-item" onClick={()=>update(i.key,0)}>Remove</button></div></article>)}<Link className="text-link" to="/shop">← Continue shopping</Link></div><aside className="cart-summary"><h2>Order summary</h2><div><span>Items subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Shipping</span><strong>Calculated after address</strong></div><div className="cart-grand-total"><span>Estimated subtotal</span><strong>{money(subtotal)}</strong></div><p className="tiny">Shipping, taxes and final prices are confirmed before payment or dispatch.</p><Link className="btn btn-dark full-width" to="/checkout">Continue to checkout <ArrowRight size={16}/></Link></aside></>}</div></section></Layout>}
 function Checkout(){
 const [items,setItems]=useState(readCart);
-useEffect(()=>{let active=true;fetch('/api/products',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('prices unavailable');return r.json()}).then(data=>{if(!active)return;const map=new Map((data.products||[]).map(p=>[String(p.id),p]));setItems(old=>{const next=old.map(i=>{const p=map.get(String(i.productId));if(!p)return i;const regular=Number(p.price_per_kg??i.pricePerKg),sale=p.sale_price_per_kg==null?null:Number(p.sale_price_per_kg);return {...i,pricePerKg:sale!==null&&sale<regular?sale:regular}});writeCart(next);return next})}).catch(()=>{});return()=>{active=false}},[]);
-const [done,setDone]=useState(null);
-const [error,setError]=useState('');
-const [submitting,setSubmitting]=useState(false);
-
 const [customer,setCustomer]=useState({name:'',email:'',phone:'',address:'',city:'',country:''});
-const [paymentMethod,setPaymentMethod]=useState('bank_transfer');
-const subtotal=items.reduce((sum,item)=>sum+(Number(item.pricePerKg)||0)*Number(item.kg||0)*Number(item.qty||0),0);
-const updateCustomer=(e)=>setCustomer(prev=>({...prev,[e.target.name]:e.target.value}));
-const submitOrder=async(e)=>{
-  e.preventDefault();
-  setError('');
-  if(!items.length){setError('Your cart is empty. Please add products before checkout.');return;}
-  setSubmitting(true);
+const [done,setDone]=useState(null),[error,setError]=useState(''),[sdkReady,setSdkReady]=useState(false);
+const [loading,setLoading]=useState(false);
+const buttonRef=React.useRef(null);
+useEffect(()=>{let active=true;fetch('/api/products',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('prices unavailable');return r.json()}).then(data=>{if(!active)return;const map=new Map((data.products||[]).map(p=>[String(p.id),p]));setItems(old=>{const next=old.map(i=>{const p=map.get(String(i.productId));if(!p)return i;const regular=Number(p.price_per_kg??i.pricePerKg),sale=p.sale_price_per_kg==null?null:Number(p.sale_price_per_kg);return {...i,pricePerKg:sale!==null&&sale<regular?sale:regular}});writeCart(next);return next})}).catch(()=>{});return()=>{active=false}},[]);
+const updateCustomer=e=>setCustomer(prev=>({...prev,[e.target.name]:e.target.value}));
+const valid=customer.name.trim()&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)&&customer.phone.trim()&&customer.address.trim()&&customer.city.trim()&&customer.country.trim();
+useEffect(()=>{
+ let alive=true;
+ const load=async()=>{
   try{
-    const response=await fetch('/api/checkout',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        customer,
-        payment_method:paymentMethod,
-        items:items.map(item=>({product_id:item.productId,quantity:item.qty,pack_kg:item.kg})),
-        subtotal
-      })
+   const cfg=await fetch('/api/paypal/config',{cache:'no-store'}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'PayPal unavailable');return d});
+   if(!window.paypal){
+    await new Promise((resolve,reject)=>{
+     const existing=document.querySelector('script[data-paypal-sdk]');
+     if(existing){existing.addEventListener('load',resolve,{once:true});existing.addEventListener('error',reject,{once:true});if(window.paypal)resolve();return;}
+     const script=document.createElement('script');script.dataset.paypalSdk='true';
+     script.src=`https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(cfg.client_id)}&currency=${cfg.currency}&intent=capture`;
+     script.onload=resolve;script.onerror=()=>reject(new Error('Could not load PayPal.'));document.head.appendChild(script);
     });
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok) throw new Error(data.error||'Checkout could not be completed. Please try again or contact sales.');
-    setDone(data.order_id||data.orderId||data.reference||'submitted');
-    localStorage.removeItem('nexovant-retail-cart');
-    window.dispatchEvent(new Event('nexovant-cart-updated'));
-    setItems([]);
-  }catch(err){
-    setError(err.message||'Checkout could not be completed. Please try again.');
-  }finally{setSubmitting(false);}
-};
-if(done)return <Layout><RetailNav/><PageHero eyebrow="ORDER REQUEST" title="Thank you for your" accent="order request." sub="Your checkout request was received."/><section className="section"><div className="container"><div className="success-card"><CircleCheck size={36}/><h2>Request submitted</h2><p>Reference: {done==='submitted'?'Submitted':done}. Please wait for confirmation of availability, final price, shipping and payment instructions before sending money.</p><Link className="btn btn-dark" to="/shop">Continue shopping <ArrowRight size={16}/></Link></div></div></section></Layout>;
-return <Layout><RetailNav/><PageHero eyebrow="SECURE CHECKOUT" title="Complete your" accent="order details." sub="Provide delivery and contact information. Final shipping, taxes and payment instructions must be confirmed before fulfillment."/><section className="section"><div className="container cart-layout"><form className="contact-form-card" onSubmit={submitOrder}><h2>Customer and delivery details</h2>{!items.length&&<p>Your cart is empty. <Link to="/shop">Browse the retail shop</Link>.</p>}<label className="field-label">Full name *</label><input name="name" value={customer.name} onChange={updateCustomer} required/><label className="field-label">Email *</label><input name="email" type="email" value={customer.email} onChange={updateCustomer} required/><label className="field-label">Phone / WhatsApp *</label><input name="phone" value={customer.phone} onChange={updateCustomer} required/><label className="field-label">Street address *</label><input name="address" value={customer.address} onChange={updateCustomer} required/><div className="form-two"><div><label className="field-label">City *</label><input name="city" value={customer.city} onChange={updateCustomer} required/></div><div><label className="field-label">Country *</label><input name="country" value={customer.country} onChange={updateCustomer} required/></div></div><label className="field-label">Preferred payment method</label><select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)}><option value="bank_transfer">Bank transfer (confirm with sales)</option><option value="cash_on_delivery">Cash on delivery (subject to availability)</option><option value="discuss_with_sales">Discuss with sales</option></select>{error&&<p className="error" role="alert">{error}</p>}<button className="btn btn-dark" type="submit" disabled={submitting||!items.length}>{submitting?'Submitting…':'Submit order request'} <ArrowRight size={16}/></button><p className="tiny">Do not send payment until Nexovant confirms the order, final price and delivery terms.</p></form><aside className="cart-summary"><h2>Order summary</h2>{items.map(item=><div key={item.key}><span>{item.name} · {item.kg} kg × {item.qty}</span><strong>{money(item.pricePerKg*item.kg*item.qty)}</strong></div>)}<div className="cart-grand-total"><span>Estimated subtotal</span><strong>{money(subtotal)}</strong></div><p className="tiny">Shipping and taxes are not included and will be confirmed separately.</p></aside></div></section></Layout>;
+   }
+   if(alive)setSdkReady(true);
+  }catch(e){if(alive)setError(e.message||'Could not initialize PayPal.');}
+ };
+ load();return()=>{alive=false};
+},[]);
+useEffect(()=>{
+ if(!sdkReady||!buttonRef.current||!valid||!items.length||done||!window.paypal?.Buttons)return;
+ buttonRef.current.innerHTML='';
+ const buttons=window.paypal.Buttons({
+  style:{layout:'vertical',shape:'rect',label:'paypal'},
+  createOrder:async()=>{
+   setError('');setLoading(true);
+   try{
+    const {data:{session}}=await supabase.auth.getSession();
+    if(!session?.access_token)throw new Error('Please sign in to your Nexovant account before paying.');
+    const response=await fetch('/api/paypal/create-order',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({customer,items:items.map(i=>({product_id:i.productId,quantity:i.qty,weight_kg:i.kg}))})});
+    const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not create PayPal order.');
+    return data.id;
+   }catch(e){setError(e.message);throw e;}finally{setLoading(false);}
+  },
+  onApprove:async(data)=>{
+   setLoading(true);setError('');
+   try{
+    const {data:{session}}=await supabase.auth.getSession();
+    if(!session?.access_token)throw new Error('Your session expired. Please sign in again.');
+    const response=await fetch('/api/paypal/capture-order',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({orderID:data.orderID})});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Payment verification failed.');
+    setDone(result.order_id);localStorage.removeItem('nexovant-retail-cart');window.dispatchEvent(new Event('nexovant-cart-updated'));setItems([]);
+   }catch(e){setError(e.message||'Payment verification failed. Contact support before paying again.');}finally{setLoading(false);}
+  },
+  onCancel:()=>setError('Payment cancelled. Your cart has not been cleared.'),
+  onError:()=>setError('PayPal checkout encountered an error. Please try again or contact support.')
+ });
+ buttons.render(buttonRef.current).catch(e=>setError(e.message||'Could not render PayPal button.'));
+ return()=>{try{buttons.close();}catch{}};
+},[sdkReady,valid,customer.name,customer.email,customer.phone,customer.address,customer.city,customer.country,items,done]);
+if(done)return <Layout><RetailNav/><PageHero eyebrow="PAYMENT CONFIRMED" title="Thank you for your" accent="order." sub="PayPal has confirmed your payment."/><section className="section"><div className="container"><div className="success-card"><CircleCheck size={36}/><h2>Payment successful</h2><p>Order reference: {done}. Your payment was verified by our server and your order has been marked confirmed.</p><Link className="btn btn-dark" to="/shop">Continue shopping <ArrowRight size={16}/></Link></div></div></section></Layout>;
+return <Layout><RetailNav/><PageHero eyebrow="SECURE CHECKOUT" title="Complete your" accent="order details." sub="Sign in to your Nexovant account, enter your delivery details and pay securely with PayPal."/><section className="section"><div className="container cart-layout"><div className="contact-form-card"><h2>Customer and delivery details</h2>{!items.length&&<p>Your cart is empty. <Link to="/shop">Browse the retail shop</Link>.</p>}<label className="field-label">Full name *</label><input name="name" value={customer.name} onChange={updateCustomer} required/><label className="field-label">Email (must match your account) *</label><input name="email" type="email" value={customer.email} onChange={updateCustomer} required/><label className="field-label">Phone / WhatsApp *</label><input name="phone" value={customer.phone} onChange={updateCustomer} required/><label className="field-label">Street address *</label><input name="address" value={customer.address} onChange={updateCustomer} required/><div className="form-two"><div><label className="field-label">City *</label><input name="city" value={customer.city} onChange={updateCustomer} required/></div><div><label className="field-label">Country *</label><input name="country" value={customer.country} onChange={updateCustomer} required/></div></div>{error&&<p className="error" role="alert">{error}</p>}<h3>Pay securely with PayPal</h3><p className="tiny">Sign in first. Prices are recalculated on the server from your product database. Shipping and taxes are not included in the current product total.</p>{!valid&&<p className="tiny">Complete all required fields with a valid email address to enable PayPal checkout.</p>}{!supabase&&<p className="error">Supabase authentication is not configured.</p>}<div ref={buttonRef} aria-label="PayPal checkout button"/>{loading&&<p className="tiny">Processing securely…</p>}</div><aside className="cart-summary"><h2>Order summary</h2>{items.map(item=><div key={item.key}><span>{item.name} · {item.kg} kg × {item.qty}</span><strong>{money(item.pricePerKg*item.kg*item.qty)}</strong></div>)}<div className="cart-grand-total"><span>Estimated subtotal (USD)</span><strong>{money(items.reduce((sum,item)=>sum+(Number(item.pricePerKg)||0)*Number(item.kg||0)*Number(item.qty||0),0))}</strong></div><p className="tiny">Shipping and taxes are not included. Final terms must be confirmed before fulfillment.</p></aside></div></section></Layout>;
 }
 
 function NotFound(){return <Layout><PageHero eyebrow="PAGE NOT FOUND" title="This page isn't" accent="available." sub="The page may have moved or the address may be incorrect."/><div className="container section"><Link className="btn btn-dark" to="/">Return home <ArrowRight size={16}/></Link></div></Layout>}
