@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     if (
       !customer.customer_name ||
       customer.email !== String(user.email || '').toLowerCase() ||
-      !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(customer.email) ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email) ||
       !customer.phone ||
       !customer.address ||
       !customer.city ||
