@@ -70,3 +70,47 @@ Only the anon/public key belongs in `.env.local`; never use the Supabase `servic
 ### Build and limitations
 
 Run `npm.cmd run build` before deployment. Dependency installation could not be completed in the preparation environment, so this archive's production build has not been verified. Login uses Supabase email/password authentication; registration may require email confirmation according to your Supabase Auth settings. Dashboards remain previews and do not yet fetch order data.
+
+
+## PayPal Checkout integration (Sandbox first)
+
+This archive adds server-side PayPal Orders v2 endpoints and a PayPal button in the existing retail checkout.
+
+### Required Vercel environment variables
+
+Keep these server-only (do not use a `VITE_` prefix):
+
+- `PAYPAL_CLIENT_ID` — PayPal REST app Client ID for the selected environment.
+- `PAYPAL_CLIENT_SECRET` — matching PayPal REST app Secret.
+- `PAYPAL_MODE` — `sandbox` for testing; use `live` only after account eligibility and live credentials are confirmed.
+- `SUPABASE_URL` — existing Supabase project URL.
+- `SUPABASE_SERVICE_ROLE_KEY` — existing Supabase service-role key, server-side only.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` — existing public frontend Supabase settings.
+
+### Deployment steps
+
+1. In Supabase SQL Editor, run `supabase/paypal-checkout-migration.sql`.
+2. In Vercel Project Settings > Environment Variables, add/update the PayPal variables above for Preview and Production as appropriate. Start with Sandbox credentials and `PAYPAL_MODE=sandbox`.
+3. Redeploy the Vercel project after changing environment variables.
+4. Push this entire updated project to the GitHub repository connected to Vercel.
+5. Create a test customer account on the site and sign in. The checkout requires a valid Supabase session and the checkout email must match the signed-in email.
+6. Add products to cart, open `/checkout`, complete all delivery fields, and use a PayPal Sandbox buyer account to test.
+7. Confirm the order appears in Supabase `orders` with `status=confirmed`, `payment_provider=paypal`, `payment_status=COMPLETED`, and PayPal IDs after successful capture.
+
+### Important payment and commercial limitations
+
+- The server recalculates item prices from the Supabase `products` table; it ignores browser-supplied prices.
+- The integration currently charges the product subtotal in USD only. Shipping, duties and taxes are not calculated or collected. Do not use this for orders where those amounts must be charged until a proper shipping/tax quote flow is added.
+- The checkout requires customer authentication. Buyers must register/sign in and use the same email address in checkout.
+- PayPal capture is verified server-side against the stored order amount and currency before the order is marked confirmed.
+- Before enabling Live mode, verify that the Italian PayPal Business account is fully verified and approved for commercial receiving, that the live REST app is enabled, and that the merchant can accept the intended currencies and card/PayPal payment methods. Country registration alone is not a guarantee of approval.
+- Never commit `.env` files, Client Secrets, Supabase service-role keys, or other credentials. If a secret has been exposed, rotate it in the provider dashboard.
+- This is an integration starter, not a substitute for end-to-end production QA, tax/shipping compliance, refund handling, webhook reconciliation, fraud review or accounting procedures. Configure PayPal webhooks and operational refund handling before relying on it for production volume.
+
+### API endpoints
+
+- `GET /api/paypal/config` — returns only the public PayPal Client ID and currency.
+- `POST /api/paypal/create-order` — requires Supabase Bearer session; recalculates prices, creates a PayPal order and stores a pending database order.
+- `POST /api/paypal/capture-order` — requires the same signed-in customer; captures and verifies PayPal payment and marks the matching order confirmed.
+
+Run `npm install` and `npm run build` locally before production deployment.
