@@ -1,4 +1,4 @@
-export const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\\/$/, '');
+export const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 export const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 export const PAYPAL_BASE = process.env.PAYPAL_MODE === 'live'
   ? 'https://api-m.paypal.com'
@@ -9,7 +9,7 @@ export function clean(value, max = 300) {
 }
 export async function getUser(req) {
   const header = req.headers?.authorization || req.headers?.Authorization || '';
-  const match = /^Bearer\\s+(.+)$/i.exec(header);
+  const match = /^Bearer\s+(.+)$/i.exec(header);
   if (!match || !SUPABASE_URL || !SUPABASE_KEY) return null;
   const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${match[1]}` }
